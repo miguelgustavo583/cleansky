@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { IconButton, Switch, Text } from 'react-native-paper';
+import { Button, Dialog, IconButton, Portal, Switch, Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import Slider from '@react-native-community/slider';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
 import { useCleanSky } from '@/context/CleanSkyContext';
 
 const GAP = 10;  // distância mínima entre os dois limites
 const STEP = 10; // passo dos botões − e +
+const SERIAL_KEY = '@cleansky:serial';
 
 interface SliderRowProps {
   title: string;
   description: string;
   value: number;
-  lower: number; // menor valor permitido
-  upper: number; // maior valor permitido
+  lower: number;
+  upper: number;
   color: string;
   onCommit: (v: number) => void;
 }
@@ -23,17 +27,15 @@ function SliderRow({ title, description, value, lower, upper, color, onCommit }:
   const [shown, setShown] = useState(value);
   const [resetKey, setResetKey] = useState(0);
 
-  // se o valor salvo mudar por fora, atualiza o número exibido
   useEffect(() => setShown(value), [value]);
 
   const clamp = (v: number) => Math.round(Math.min(Math.max(v, lower), upper));
 
-  // chamado ao soltar o slider ou tocar em − / +
   function commit(v: number) {
     const final = clamp(v);
     setShown(final);
     onCommit(final);
-    setResetKey((k) => k + 1); // reposiciona o slider uma única vez
+    setResetKey((k) => k + 1);
   }
 
   return (
@@ -99,10 +101,47 @@ function SwitchRow({ title, description, value, onChange }: SwitchRowProps) {
 
 export default function Ajustes() {
   const { settings, updateSettings } = useCleanSky();
+  const router = useRouter();
+
+  const [serial, setSerial] = useState<string | null>(null);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SERIAL_KEY).then(setSerial);
+  }, []);
+
+  async function desconectar() {
+    await AsyncStorage.removeItem(SERIAL_KEY);
+    setConfirmVisible(false);
+    router.replace('/'); // volta para a tela Conectar dispositivo
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Dispositivo */}
+        <View style={styles.card}>
+          <View style={styles.deviceRow}>
+            <View style={styles.deviceIcon}>
+              <MaterialCommunityIcons name="cloud-outline" size={22} color={colors.text} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Dispositivo conectado</Text>
+              <Text style={styles.rowDesc}>{serial ?? 'Nenhum dispositivo'}</Text>
+            </View>
+          </View>
+          <Button
+            mode="outlined"
+            icon="link-off"
+            textColor={colors.dense}
+            style={styles.disconnectBtn}
+            onPress={() => setConfirmVisible(true)}
+          >
+            Desconectar dispositivo
+          </Button>
+        </View>
+
+        {/* Limiares */}
         <View style={styles.card}>
           <SliderRow
             title="Início de fumaça moderada"
@@ -124,6 +163,7 @@ export default function Ajustes() {
           />
         </View>
 
+        {/* Preferências */}
         <View style={styles.card}>
           <SwitchRow
             title="Notificações push"
@@ -139,6 +179,22 @@ export default function Ajustes() {
           />
         </View>
       </ScrollView>
+
+      {/* Confirmação */}
+      <Portal>
+        <Dialog visible={confirmVisible} onDismiss={() => setConfirmVisible(false)}>
+          <Dialog.Title>Desconectar dispositivo?</Dialog.Title>
+          <Dialog.Content>
+            <Text>
+              Você voltará para a tela de conexão e precisará informar o número de série novamente.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setConfirmVisible(false)}>Cancelar</Button>
+            <Button textColor={colors.dense} onPress={desconectar}>Desconectar</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </SafeAreaView>
   );
 }
@@ -154,6 +210,12 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 18,
   },
+  deviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  deviceIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#2A2A33', alignItems: 'center', justifyContent: 'center',
+  },
+  disconnectBtn: { borderColor: colors.dense },
   row: { gap: 2 },
   rowHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   rowTitle: { color: colors.text, fontWeight: '700', fontSize: 15 },
